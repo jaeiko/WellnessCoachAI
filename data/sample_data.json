@@ -1,0 +1,35 @@
+{
+  "timeseries_data": [
+    {
+      "time": "2025-07-27T22:00:00Z",
+      "heart_rate": 65,
+      "stress": 15
+    },
+    {
+      "time": "2025-07-28T03:00:00Z",
+      "heart_rate": 95,
+      "stress": 70
+    },
+    {
+      "time": "2025-07-28T09:00:00Z",
+      "heart_rate": 80,
+      "stress": 30
+    }
+  ],
+  "sleep_data": {
+    "total_sleep_time_minutes": 360,
+    "deep_sleep_minutes": 50,
+    "rem_sleep_minutes": 70,
+    "awake_minutes": 30
+  },
+  "exercise_data": [],
+  "user_preferences": {
+    "likes": [
+      "음악 듣기",
+      "산책"
+    ],
+    "dislikes": [
+      "아침 일찍 일어나기"
+    ]
+  }
+}
