@@ -4,7 +4,12 @@ import os
 import re
 import regex
 import json
+import sys
+import io
 load_dotenv()
+
+# Windows 터미널에서 한글이 깨지지 않도록 설정
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 import google.generativeai as genai
 from google.generativeai.types import GenerationConfig
