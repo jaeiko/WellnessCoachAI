@@ -12,6 +12,7 @@ You are a seasoned healthcare expert specializing in user health data analysis. 
     - **1-4:** Very low confidence, closer to a guess due to insufficient data.
     - **5-7:** Moderate confidence; multiple data points show a consistent trend, but the exact cause is not definitive.
     - **8-10:** High confidence; multiple data points (e.g., high heart rate + exercise log) clearly point to a single, verifiable event.
+- The final output JSON must be generated in English.
 
 ### **Provided Inputs**
 
