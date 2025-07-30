@@ -157,6 +157,11 @@ past_reports: {json.dumps(past_reports)}
         print("\n--- 장기 분석 결과 (JSON) ---\n")
         if long_term_result_json:
             print(json.dumps(long_term_result_json, indent=2, ensure_ascii=False))
+            print("--- 장기 분석 결과 ---")
+            for pattern in long_term_result_json.get("detected_patterns", []):
+                print(f"발견된 패턴: {pattern.get('pattern_description')}")
+                print(f"가설 및 분석: {pattern.get('insight_and_hypothesis')}")
+                print("-" * 10)
         else:
             print("장기 분석에 실패했습니다. 원본 답변:", long_term_response_text)
     except Exception as e:
