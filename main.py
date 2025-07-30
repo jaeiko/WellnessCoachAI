@@ -1,3 +1,8 @@
+from firebase_admin import credentials, firestore
+import firebase_admin
+from google.api_core import exceptions as api_core_exceptions
+from google.generativeai.types import GenerationConfig
+import google.generativeai as genai
 import time
 from dotenv import load_dotenv
 import os
@@ -6,12 +11,6 @@ import regex
 import json
 load_dotenv()
 
-import google.generativeai as genai
-from google.generativeai.types import GenerationConfig
-from google.api_core import exceptions as api_core_exceptions
-
-import firebase_admin
-from firebase_admin import credentials, firestore
 
 # --- 1. Firebase 초기화 ---
 try:
@@ -28,11 +27,11 @@ except Exception as e:
 
 # --- 2. 프롬프트 파일 읽기 ---
 try:
-    with open("prompts/analytics_prompt.txt", "r", encoding="utf-8") as f:
+    with open("prompts/analytics_prompt.txt", "r", encoding="utf-8", errors="ignore") as f:
         HEALTHCARE_ANALYTICS_PROMPT = f.read()
-    with open("prompts/suggestion_prompt.txt", "r", encoding="utf-8") as f:
+    with open("prompts/suggestion_prompt.txt", "r", encoding="utf-8", errors="ignore") as f:
         ROUTINE_SUGGESTION_PROMPT = f.read()
-    with open("prompts/long_term_analysis_prompt.txt", "r", encoding="utf-8") as f:
+    with open("prompts/long_term_analysis_prompt.txt", "r", encoding="utf-8", errors="ignore") as f:
         LONG_TERM_ANALYSIS_PROMPT = f.read()
 except FileNotFoundError as e:
     print(f"오류: '{e.filename}' 프롬프트 파일을 찾을 수 없습니다. 'prompts' 폴더를 확인해주세요.")
@@ -74,13 +73,19 @@ SAMPLE_EXERCISE_DATA = '[]'
 SAMPLE_USER_PREFERENCES = '{"likes": ["음악 듣기", "산책"], "dislikes": ["아침 일찍 일어나기"]}'
 
 # --- 6. API 호출 및 JSON 추출 함수 ---
+
+
 def ask_question_to_gemini_cache(prompt, attachments=None, max_retries=5, retry_delay=5):
     start_time = time.time()
+
+    if prompt:
+        prompt = prompt.encode('utf-8', 'surrogatepass').decode('utf-8')
+
     if attachments:
         contents = attachments + [prompt]
-    else: 
+    else:
         contents = [prompt]
-    
+
     generation_config = GenerationConfig(
         temperature=0.3,
         response_mime_type="application/json"
@@ -88,7 +93,8 @@ def ask_question_to_gemini_cache(prompt, attachments=None, max_retries=5, retry_
 
     for attempt in range(max_retries):
         try:
-            print(f"attempt {attempt + 1} starting at {time.time() - start_time:.2f}s")
+            print(
+                f"attempt {attempt + 1} starting at {time.time() - start_time:.2f}s")
             api_start = time.time()
             response = model.generate_content(
                 contents=contents,
@@ -109,34 +115,40 @@ def ask_question_to_gemini_cache(prompt, attachments=None, max_retries=5, retry_
             raise
     return None
 
+
 def json_match(input_string):
-    if not input_string: return None
+    if not input_string:
+        return None
     input_string = re.sub(r"```json\s*|\s*```", "", input_string.strip())
     try:
         return json.loads(input_string)
     except json.JSONDecodeError:
         return None
-    
+
+
 def save_analysis_to_db(user_id, analysis_data):
     if db is None:
         print("DB가 초기화되지 않아 저장을 건너뜁니다.")
         return
     try:
-        doc_ref = db.collection("health_analyses").document(user_id).collection("daily_reports").document()
+        doc_ref = db.collection("health_analyses").document(
+            user_id).collection("daily_reports").document()
         doc_ref.set(analysis_data)
         print(f"분석 결과를 DB에 성공적으로 저장했습니다.")
     except Exception as e:
         print(f"DB 저장 중 오류 발생: {e}")
 
+
 def analyze_long_term_patterns(user_id):
     if db is None:
         print("DB가 초기화되지 않아 장기 분석을 건너뜁니다.")
         return
-        
+
     print("\n" + "="*20 + "\n장기 패턴 분석 시작\n" + "="*20)
-    
+
     try:
-        reports_ref = db.collection("health_analyses").document(user_id).collection("daily_reports")
+        reports_ref = db.collection("health_analyses").document(
+            user_id).collection("daily_reports")
         docs = reports_ref.stream()
         past_reports = [doc.to_dict() for doc in docs]
 
@@ -150,7 +162,7 @@ def analyze_long_term_patterns(user_id):
 ---
 past_reports: {json.dumps(past_reports)}
 """
-        
+
         long_term_response_text = ask_question_to_gemini_cache(prompt_3)
         long_term_result_json = json_match(long_term_response_text)
 
@@ -167,16 +179,17 @@ past_reports: {json.dumps(past_reports)}
     except Exception as e:
         print(f"장기 분석 중 오류 발생: {e}")
 
+
 # --- 최종 실행 로직 (대화 루프 적용) ---
 if __name__ == "__main__":
-    USER_ID = "test_user_01" # 사용자 ID
+    USER_ID = "test_user_01"  # 사용자 ID
 
-    while True: # 대화를 계속하기 위한 무한 루프 시작
+    while True:  # 대화를 계속하기 위한 무한 루프 시작
         # --- 1단계: 사용자 목표 입력 및 진단 프롬프트 실행 ---
         print("\n" + "="*20 + "\n1단계: 건강 데이터 분석 시작\n" + "="*20)
-        
+
         user_goal = input("이번 주의 건강 목표를 입력해주세요 (종료하려면 '종료' 입력): ")
-        
+
         # 사용자가 종료를 원하면 루프 탈출
         if user_goal.lower() in ["종료", "끝", "exit"]:
             break
@@ -187,8 +200,8 @@ if __name__ == "__main__":
                 sample_data = json.load(f)
         except FileNotFoundError:
             print("오류: data/sample_data.json 파일을 찾을 수 없습니다.")
-            continue # 루프의 처음으로 돌아감
-            
+            continue  # 루프의 처음으로 돌아감
+
         prompt_1 = f"""
 {HEALTHCARE_ANALYTICS_PROMPT}
 
@@ -198,34 +211,37 @@ timeseries_data: {json.dumps(sample_data.get("timeseries_data"))}
 sleep_data: {json.dumps(sample_data.get("sleep_data"))}
 exercise_data: {json.dumps(sample_data.get("exercise_data"))}
 """
-        
-        analysis_response_text = ask_question_to_gemini_cache(prompt_1, attachments)
+
+        analysis_response_text = ask_question_to_gemini_cache(
+            prompt_1, attachments)
         analysis_result_json = json_match(analysis_response_text)
-        
+
         print("\n--- 1단계: 진단 결과 (JSON) ---\n")
         if analysis_result_json:
             print(json.dumps(analysis_result_json, indent=2, ensure_ascii=False))
-            save_analysis_to_db(USER_ID, analysis_result_json) 
+            save_analysis_to_db(USER_ID, analysis_result_json)
         else:
             print("1단계: 진단 분석에 실패했습니다. 원본 답변:", analysis_response_text)
-            continue # 실패 시 루프의 처음으로 돌아감
+            continue  # 실패 시 루프의 처음으로 돌아감
 
         # --- 2단계: 상호작용 (사용자 피드백 입력) ---
         key_events_list = analysis_result_json.get("key_events", [])
-        
+
         if not key_events_list:
-            print("\n" + "="*20 + "\nAI 비서: 분석 결과, 특별한 이상 징후 없이 건강한 상태를 잘 유지하고 계시네요! 멋집니다.\n" + "="*20)
+            print("\n" + "="*20 +
+                  "\nAI 비서: 분석 결과, 특별한 이상 징후 없이 건강한 상태를 잘 유지하고 계시네요! 멋집니다.\n" + "="*20)
         else:
             print("\n" + "="*20 + "\n2단계: 상호작용: 사용자에게 질문\n" + "="*20)
-            user_explanation = key_events_list[0].get("explanation_for_user", "분석 중 오류가 발생했습니다.")
+            user_explanation = key_events_list[0].get(
+                "explanation_for_user", "분석 중 오류가 발생했습니다.")
             print(f"AI 비서: {user_explanation}")
-            
+
             user_feedback = input("당신의 답변을 입력해주세요: ")
             print("-" * 20)
 
             # --- 3단계: 루틴 제안 프롬프트 실행 ---
             print("\n" + "="*20 + "\n3단계: 맞춤형 루틴 제안 시작\n" + "="*20)
-            
+
             prompt_2 = f"""
 {ROUTINE_SUGGESTION_PROMPT}
 
@@ -234,18 +250,20 @@ analysis_result: {json.dumps(analysis_result_json)}
 user_preferences: {json.dumps(sample_data.get("user_preferences"))}
 user_feedback: "{user_feedback}" 
 """
-            
-            routine_response_text = ask_question_to_gemini_cache(prompt_2) 
+
+            routine_response_text = ask_question_to_gemini_cache(prompt_2)
             routine_result_json = json_match(routine_response_text)
-            
+
             print("\n--- 3단계: 루틴 제안 결과 (JSON) ---\n")
             if routine_result_json:
-                print(json.dumps(routine_result_json, indent=2, ensure_ascii=False))
+                print(json.dumps(routine_result_json,
+                      indent=2, ensure_ascii=False))
             else:
                 print("3단계: 루틴 제안에 실패했습니다. 원본 답변:", routine_response_text)
 
         # --- 대화 계속 여부 확인 ---
-        continue_chat = input("\n더 분석하고 싶은 내용이 있으신가요? (계속하려면 Enter, 끝내려면 '종료' 입력): ")
+        continue_chat = input(
+            "\n더 분석하고 싶은 내용이 있으신가요? (계속하려면 Enter, 끝내려면 '종료' 입력): ")
         if continue_chat.lower() in ["종료", "끝", "exit"]:
             break
 
