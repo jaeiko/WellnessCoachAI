@@ -127,6 +127,7 @@ celerybeat.pid
 
 # Environments
 .env
+multi_tool_agent/.env
 .venv
 env/
 venv/
