@@ -1,273 +1,108 @@
-from firebase_admin import credentials, firestore
-import firebase_admin
-from google.api_core import exceptions as api_core_exceptions
-from google.generativeai.types import GenerationConfig
-import google.generativeai as genai
-import time
+# main.py
 from dotenv import load_dotenv
+import google.generativeai as genai
 import os
-import re
-import regex
-import json
-load_dotenv()
+import asyncio
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+import sys
+import io
 
+# Windows 터미널에서 한글이 깨지지 않도록 설정
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-# --- 1. Firebase 초기화 ---
-try:
-    # 다운로드한 Firebase 키 파일의 실제 이름으로 변경해야 합니다.
-    cred = credentials.Certificate("wellnesscoachai-firebase-adminsdk.json")
-    # 이미 초기화되었는지 확인
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(cred)
-    db = firestore.client()
-except Exception as e:
-    print(f"Firebase 초기화 오류: {e}")
-    print("Firebase 키 파일을 확인해주세요. DB 기능 없이 계속합니다.")
-    db = None
+# multi_tool_agent 폴더의 agent.py에서 '만능 에이전트'를 가져옵니다.
+from multi_tool_agent.agent import wellness_coach_agent
 
-# --- 2. 프롬프트 파일 읽기 ---
-try:
-    with open("prompts/analytics_prompt.txt", "r", encoding="utf-8", errors="ignore") as f:
-        HEALTHCARE_ANALYTICS_PROMPT = f.read()
-    with open("prompts/suggestion_prompt.txt", "r", encoding="utf-8", errors="ignore") as f:
-        ROUTINE_SUGGESTION_PROMPT = f.read()
-    with open("prompts/long_term_analysis_prompt.txt", "r", encoding="utf-8", errors="ignore") as f:
-        LONG_TERM_ANALYSIS_PROMPT = f.read()
-except FileNotFoundError as e:
-    print(f"오류: '{e.filename}' 프롬프트 파일을 찾을 수 없습니다. 'prompts' 폴더를 확인해주세요.")
-    exit()
-
-# --- 3. Gemini API 클라이언트 설정 ---
-model_name = "gemini-1.5-flash"
+# .env 파일 로드 및 API 키 설정
+load_dotenv(dotenv_path="multi_tool_agent/.env")
 genai.configure(api_key=os.getenv("GOOGLE_AI_API_KEY"))
-model = genai.GenerativeModel(model_name)
-
-# --- 4. 로컬 PDF 파일 업로드 ---
-pdf_file_paths = [
-    "docs/Introduction to stress management.pdf",
-    "docs/The science of sleep.pdf",
-    "docs/Stress Management-textbook.pdf",
-    "docs/불면증의 인지행동치료.pdf",
-    "docs/Breathing Techniques for the Nervous System.pdf",
-    "docs/The Mind-Body Connection.pdf",
-    "docs/Physiology-of-Exercise.pdf",
-    "docs/Food, Nutrition, Health and Fitness.pdf",
-]
-
-print("PDF 파일을 업로드하는 중...")
-attachments = []
-for path in pdf_file_paths:
-    try:
-        uploaded_file = genai.upload_file(path=path)
-        attachments.append(uploaded_file)
-        print(f"'{path}' 업로드 성공.")
-    except Exception as e:
-        print(f"'{path}' 파일 업로드 실패: {e}")
-print("-" * 20)
-
-# --- 5. 샘플 데이터 정의 ---
-# 실제로는 이 데이터를 안드로이드 앱에서 받아오게 됩니다.
-SAMPLE_TIMESERIES_DATA = '[{"time": "2025-07-27T22:00:00Z", "heart_rate": 65, "stress": 15}, {"time": "2025-07-28T03:00:00Z", "heart_rate": 95, "stress": 70}, {"time": "2025-07-28T09:00:00Z", "heart_rate": 80, "stress": 30}]'
-SAMPLE_SLEEP_DATA = '{"total_sleep_time_minutes": 360, "deep_sleep_minutes": 50, "rem_sleep_minutes": 70, "awake_minutes": 30}'
-SAMPLE_EXERCISE_DATA = '[]'
-SAMPLE_USER_PREFERENCES = '{"likes": ["음악 듣기", "산책"], "dislikes": ["아침 일찍 일어나기"]}'
-
-# --- 6. API 호출 및 JSON 추출 함수 ---
 
 
-def ask_question_to_gemini_cache(prompt, attachments=None, max_retries=5, retry_delay=5):
-    start_time = time.time()
+# --- (수정) 대화 매니저 클래스 ---
+class ConversationManager:
+    def __init__(self, agent):
+        self.agent = agent
+        self.runner = None
+        self.session_info = {
+            "app_name": "wellness_coach_app",
+            "user_id": "user_1",
+            "session_id": "session_1"
+        }
 
-    if prompt:
-        prompt = prompt.encode('utf-8', 'surrogatepass').decode('utf-8')
+    async def initialize(self):
+        """세션과 러너를 비동기적으로 초기화합니다."""
+        session_service = InMemorySessionService()
+        await session_service.create_session(**self.session_info)
+        self.runner = Runner(
+            agent=self.agent,
+            app_name=self.session_info["app_name"],
+            session_service=session_service
+        )
+        print("🤖 Wellness Coach AI가 초기화되었습니다.")
 
-    if attachments:
-        contents = attachments + [prompt]
-    else:
-        contents = [prompt]
-
-    generation_config = GenerationConfig(
-        temperature=0.3,
-        response_mime_type="application/json"
-    )
-
-    for attempt in range(max_retries):
+    def format_response(self, response):
+        """AI의 답변에서 텍스트와 도구 사용 내역을 모두 추출하여 예쁘게 만듭니다."""
+        
+        # 1. 텍스트 부분 추출 (새로운 방식)
+        text_part = ""
+        if response and response.parts:
+            text_part = response.parts[0].text
+        
+        # 2. 도구 사용(function_call) 부분 추출
+        tool_calls_part = ""
         try:
-            print(
-                f"attempt {attempt + 1} starting at {time.time() - start_time:.2f}s")
-            api_start = time.time()
-            response = model.generate_content(
-                contents=contents,
-                generation_config=generation_config
-            )
-            print(f"API call took {time.time() - api_start:.2f}s")
-            return response.text
-        except api_core_exceptions.GoogleAPICallError as e:
-            print(f"Google API 오류 발생 (시도 {attempt + 1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                print(f"{retry_delay}초 후 재시도합니다...")
-                time.sleep(retry_delay)
-            else:
-                print("최대 재시도 횟수를 초과했습니다.")
-                raise
-        except Exception as e:
-            print(f"예상치 못한 오류 발생 (시도 {attempt + 1}/{max_retries}): {e}")
-            raise
-    return None
+            if response and response.parts:
+                for part in response.parts:
+                    if part.function_call:
+                        tool_name = part.function_call.name.split('/')[-1]
+                        args = dict(part.function_call.args)
+                        tool_calls_part += f"\n\n🔧 **도구 사용:** `{tool_name}`"
+        except Exception:
+            pass
+            
+        return text_part + tool_calls_part
 
-
-def json_match(input_string):
-    if not input_string:
-        return None
-    input_string = re.sub(r"```json\s*|\s*```", "", input_string.strip())
-    try:
-        return json.loads(input_string)
-    except json.JSONDecodeError:
-        return None
-
-
-def save_analysis_to_db(user_id, analysis_data):
-    if db is None:
-        print("DB가 초기화되지 않아 저장을 건너뜁니다.")
-        return
-    try:
-        doc_ref = db.collection("health_analyses").document(
-            user_id).collection("daily_reports").document()
-        doc_ref.set(analysis_data)
-        print(f"분석 결과를 DB에 성공적으로 저장했습니다.")
-    except Exception as e:
-        print(f"DB 저장 중 오류 발생: {e}")
-
-
-def analyze_long_term_patterns(user_id):
-    if db is None:
-        print("DB가 초기화되지 않아 장기 분석을 건너뜁니다.")
-        return
-
-    print("\n" + "="*20 + "\n장기 패턴 분석 시작\n" + "="*20)
-
-    try:
-        reports_ref = db.collection("health_analyses").document(
-            user_id).collection("daily_reports")
-        docs = reports_ref.stream()
-        past_reports = [doc.to_dict() for doc in docs]
-
-        if len(past_reports) < 2:
-            print("분석할 과거 데이터가 충분하지 않습니다 (최소 2개 필요).")
-            return
-
-        prompt_3 = f"""
-{LONG_TERM_ANALYSIS_PROMPT}
-
----
-past_reports: {json.dumps(past_reports)}
-"""
-
-        long_term_response_text = ask_question_to_gemini_cache(prompt_3)
-        long_term_result_json = json_match(long_term_response_text)
-
-        print("\n--- 장기 분석 결과 (JSON) ---\n")
-        if long_term_result_json:
-            print(json.dumps(long_term_result_json, indent=2, ensure_ascii=False))
-            print("--- 장기 분석 결과 ---")
-            for pattern in long_term_result_json.get("detected_patterns", []):
-                print(f"발견된 패턴: {pattern.get('pattern_description')}")
-                print(f"가설 및 분석: {pattern.get('insight_and_hypothesis')}")
-                print("-" * 10)
+    async def send_message(self, query):
+        """사용자 메시지를 보내고 전체 답변을 받아옵니다."""
+        print(f"\n> 당신: {query}")
+        content = types.Content(role='user', parts=[types.Part(text=query)])
+        
+        final_response = None
+        async for event in self.runner.run_async(user_id=self.session_info["user_id"], session_id=self.session_info["session_id"], new_message=content):
+            if event.is_final_response():
+                final_response = event.content
+                break
+        
+        if final_response:
+            formatted_text = self.format_response(final_response)
+            print(f"\nAI 비서: {formatted_text}")
         else:
-            print("장기 분석에 실패했습니다. 원본 답변:", long_term_response_text)
-    except Exception as e:
-        print(f"장기 분석 중 오류 발생: {e}")
+            print("\nAI 비서: 죄송합니다, 답변을 생성하는 데 실패했습니다.")
 
+async def main():
+    """메인 실행 함수"""
+    
+    # 대화 매니저 생성 및 초기화
+    manager = ConversationManager(agent=wellness_coach_agent)
+    await manager.initialize()
+    
+    # AI에게 먼저 분석을 시작하도록 지시
+    await manager.send_message("내 건강 데이터 분석해줘.")
 
-# --- 최종 실행 로직 (대화 루프 적용) ---
+    while True:
+        user_input = input("\n> ")
+        if user_input.lower() in ["종료", "끝", "exit"]:
+            break
+        await manager.send_message(user_input)
+
+    print("\n대화를 종료합니다.")
+    
+    
+# --- 최종 실행 ---
 if __name__ == "__main__":
-    USER_ID = "test_user_01"  # 사용자 ID
-
-    while True:  # 대화를 계속하기 위한 무한 루프 시작
-        # --- 1단계: 사용자 목표 입력 및 진단 프롬프트 실행 ---
-        print("\n" + "="*20 + "\n1단계: 건강 데이터 분석 시작\n" + "="*20)
-
-        user_goal = input("이번 주의 건강 목표를 입력해주세요 (종료하려면 '종료' 입력): ")
-
-        # 사용자가 종료를 원하면 루프 탈출
-        if user_goal.lower() in ["종료", "끝", "exit"]:
-            break
-
-        # --- (수정) 샘플 데이터 로드 위치를 루프 안으로 이동 ---
-        try:
-            with open("data/sample_data.json", "r", encoding="utf-8") as f:
-                sample_data = json.load(f)
-        except FileNotFoundError:
-            print("오류: data/sample_data.json 파일을 찾을 수 없습니다.")
-            continue  # 루프의 처음으로 돌아감
-
-        prompt_1 = f"""
-{HEALTHCARE_ANALYTICS_PROMPT}
-
----
-user_goal: "{user_goal}"
-timeseries_data: {json.dumps(sample_data.get("timeseries_data"))}
-sleep_data: {json.dumps(sample_data.get("sleep_data"))}
-exercise_data: {json.dumps(sample_data.get("exercise_data"))}
-"""
-
-        analysis_response_text = ask_question_to_gemini_cache(
-            prompt_1, attachments)
-        analysis_result_json = json_match(analysis_response_text)
-
-        print("\n--- 1단계: 진단 결과 (JSON) ---\n")
-        if analysis_result_json:
-            print(json.dumps(analysis_result_json, indent=2, ensure_ascii=False))
-            save_analysis_to_db(USER_ID, analysis_result_json)
-        else:
-            print("1단계: 진단 분석에 실패했습니다. 원본 답변:", analysis_response_text)
-            continue  # 실패 시 루프의 처음으로 돌아감
-
-        # --- 2단계: 상호작용 (사용자 피드백 입력) ---
-        key_events_list = analysis_result_json.get("key_events", [])
-
-        if not key_events_list:
-            print("\n" + "="*20 +
-                  "\nAI 비서: 분석 결과, 특별한 이상 징후 없이 건강한 상태를 잘 유지하고 계시네요! 멋집니다.\n" + "="*20)
-        else:
-            print("\n" + "="*20 + "\n2단계: 상호작용: 사용자에게 질문\n" + "="*20)
-            user_explanation = key_events_list[0].get(
-                "explanation_for_user", "분석 중 오류가 발생했습니다.")
-            print(f"AI 비서: {user_explanation}")
-
-            user_feedback = input("당신의 답변을 입력해주세요: ")
-            print("-" * 20)
-
-            # --- 3단계: 루틴 제안 프롬프트 실행 ---
-            print("\n" + "="*20 + "\n3단계: 맞춤형 루틴 제안 시작\n" + "="*20)
-
-            prompt_2 = f"""
-{ROUTINE_SUGGESTION_PROMPT}
-
----
-analysis_result: {json.dumps(analysis_result_json)}
-user_preferences: {json.dumps(sample_data.get("user_preferences"))}
-user_feedback: "{user_feedback}" 
-"""
-
-            routine_response_text = ask_question_to_gemini_cache(prompt_2)
-            routine_result_json = json_match(routine_response_text)
-
-            print("\n--- 3단계: 루틴 제안 결과 (JSON) ---\n")
-            if routine_result_json:
-                print(json.dumps(routine_result_json,
-                      indent=2, ensure_ascii=False))
-            else:
-                print("3단계: 루틴 제안에 실패했습니다. 원본 답변:", routine_response_text)
-
-        # --- 대화 계속 여부 확인 ---
-        continue_chat = input(
-            "\n더 분석하고 싶은 내용이 있으신가요? (계속하려면 Enter, 끝내려면 '종료' 입력): ")
-        if continue_chat.lower() in ["종료", "끝", "exit"]:
-            break
-
-    # --- 4단계: 장기 패턴 분석 실행 (루프 종료 후 1회 실행) ---
-    analyze_long_term_patterns(USER_ID)
-
-    print("\nAI 비서와의 대화를 종료합니다. 건강한 하루 보내세요!")
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n사용자에 의해 프로그램이 종료되었습니다.")

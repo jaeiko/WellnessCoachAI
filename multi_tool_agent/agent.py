@@ -1,67 +1,25 @@
-import datetime
-from zoneinfo import ZoneInfo
+# multi_tool_agent/agent.py
 from google.adk.agents import Agent
 
-def get_weather(city: str) -> dict:
-    """Retrieves the current weather report for a specified city.
+# 같은 폴더에 있는 tools.py에서 모든 도구들을 가져옵니다.
+from .tools import get_health_data, Youtube, google_calendar_create_event
 
-    Args:
-        city (str): The name of the city for which to retrieve the weather report.
+# --- 프롬프트 파일 읽기 ---
+try:
+    with open("prompts/analytics_prompt.txt", "r", encoding="utf-8") as f:
+        # analytics_prompt는 이제 get_health_data 도구에 대한 상세 지침이 됩니다.
+        HEALTHCARE_ANALYTICS_INSTRUCTIONS = f.read()
+except FileNotFoundError:
+    HEALTHCARE_ANALYTICS_INSTRUCTIONS = "Analyze health data." # 기본값
 
-    Returns:
-        dict: status and result or error msg.
-    """
-    if city.lower() == "new york":
-        return {
-            "status": "success",
-            "report": (
-                "The weather in New York is sunny with a temperature of 25 degrees"
-                " Celsius (77 degrees Fahrenheit)."
-            ),
-        }
-    else:
-        return {
-            "status": "error",
-            "error_message": f"Weather information for '{city}' is not available.",
-        }
-
-
-def get_current_time(city: str) -> dict:
-    """Returns the current time in a specified city.
-
-    Args:
-        city (str): The name of the city for which to retrieve the current time.
-
-    Returns:
-        dict: status and result or error msg.
-    """
-
-    if city.lower() == "new york":
-        tz_identifier = "America/New_York"
-    else:
-        return {
-            "status": "error",
-            "error_message": (
-                f"Sorry, I don't have timezone information for {city}."
-            ),
-        }
-
-    tz = ZoneInfo(tz_identifier)
-    now = datetime.datetime.now(tz)
-    report = (
-        f'The current time in {city} is {now.strftime("%Y-%m-%d %H:%M:%S %Z%z")}'
-    )
-    return {"status": "success", "report": report}
-
-
-root_agent = Agent(
-    name="weather_time_agent",
-    model="gemini-2.0-flash",
-    description=(
-        "Agent to answer questions about the time and weather in a city."
-    ),
-    instruction=(
-        "You are a helpful agent who can answer user questions about the time and weather in a city."
-    ),
-    tools=[get_weather, get_current_time],
+# --- '만능' 웰니스 코치 에이전트 ---
+wellness_coach_agent = Agent(
+    name="WellnessCoachAgent",
+    model="gemini-1.5-flash",
+    description="A comprehensive AI wellness coach that analyzes health data and suggests routines.",
+    instruction="""
+HEALTHCARE_ANALYTICS_INSTRUCTIONS
+""",
+    # 모든 도구를 이 하나의 에이전트에게 줍니다.
+    tools=[get_health_data, Youtube, google_calendar_create_event],
 )
