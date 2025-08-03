@@ -1,4 +1,5 @@
 # main.py
+from multi_tool_agent.agent import wellness_coach_agent
 from dotenv import load_dotenv
 import google.generativeai as genai
 import os
@@ -13,14 +14,13 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 # multi_tool_agent 폴더의 agent.py에서 '만능 에이전트'를 가져옵니다.
-from multi_tool_agent.agent import wellness_coach_agent
 
 # .env 파일 로드 및 API 키 설정
 load_dotenv(dotenv_path="multi_tool_agent/.env")
 genai.configure(api_key=os.getenv("GOOGLE_AI_API_KEY"))
 
 
-# --- (수정) 대화 매니저 클래스 ---
+# --- 대화 매니저 클래스 ---
 class ConversationManager:
     def __init__(self, agent):
         self.agent = agent
@@ -44,12 +44,12 @@ class ConversationManager:
 
     def format_response(self, response):
         """AI의 답변에서 텍스트와 도구 사용 내역을 모두 추출하여 예쁘게 만듭니다."""
-        
+
         # 1. 텍스트 부분 추출 (새로운 방식)
         text_part = ""
         if response and response.parts:
             text_part = response.parts[0].text
-        
+
         # 2. 도구 사용(function_call) 부분 추출
         tool_calls_part = ""
         try:
@@ -61,35 +61,36 @@ class ConversationManager:
                         tool_calls_part += f"\n\n🔧 **도구 사용:** `{tool_name}`"
         except Exception:
             pass
-            
+
         return text_part + tool_calls_part
 
     async def send_message(self, query):
         """사용자 메시지를 보내고 전체 답변을 받아옵니다."""
         print(f"\n> 당신: {query}")
         content = types.Content(role='user', parts=[types.Part(text=query)])
-        
+
         final_response = None
         async for event in self.runner.run_async(user_id=self.session_info["user_id"], session_id=self.session_info["session_id"], new_message=content):
             if event.is_final_response():
                 final_response = event.content
                 break
-        
+
         if final_response:
             formatted_text = self.format_response(final_response)
             print(f"\nAI 비서: {formatted_text}")
         else:
             print("\nAI 비서: 죄송합니다, 답변을 생성하는 데 실패했습니다.")
 
+
 async def main():
     """메인 실행 함수"""
-    
+
     # 대화 매니저 생성 및 초기화
     manager = ConversationManager(agent=wellness_coach_agent)
     await manager.initialize()
-    
+
     # AI에게 먼저 분석을 시작하도록 지시
-    await manager.send_message("내 건강 데이터 분석해줘.")
+    await manager.send_message(input("AI에게 먼저 분석을 시작하도록 지시하세요: "))
 
     while True:
         user_input = input("\n> ")
@@ -98,8 +99,8 @@ async def main():
         await manager.send_message(user_input)
 
     print("\n대화를 종료합니다.")
-    
-    
+
+
 # --- 최종 실행 ---
 if __name__ == "__main__":
     try:

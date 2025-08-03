@@ -1,35 +1,60 @@
 {
+  "user_profile": {
+    "user_id": "test_user_01",
+    "age": 28,
+    "gender": "Male",
+    "height_cm": 175,
+    "weight_kg": 72
+  },
   "timeseries_data": [
-    {
-      "time": "2025-07-27T22:00:00Z",
-      "heart_rate": 65,
-      "stress": 15
-    },
-    {
-      "time": "2025-07-28T03:00:00Z",
-      "heart_rate": 95,
-      "stress": 70
-    },
-    {
-      "time": "2025-07-28T09:00:00Z",
-      "heart_rate": 80,
-      "stress": 30
-    }
+    { "time": "2025-07-29T15:00:00Z", "heart_rate": 85, "stress": 80 },
+    { "time": "2025-07-30T03:30:00Z", "heart_rate": 95, "stress": 70 }
   ],
   "sleep_data": {
-    "total_sleep_time_minutes": 360,
-    "deep_sleep_minutes": 50,
-    "rem_sleep_minutes": 70,
-    "awake_minutes": 30
-  },
-  "exercise_data": [],
-  "user_preferences": {
-    "likes": [
-      "음악 듣기",
-      "산책"
-    ],
-    "dislikes": [
-      "아침 일찍 일어나기"
+    "start_time": "2025-07-29T23:00:00Z",
+    "end_time": "2025-07-30T06:30:00Z",
+    "duration_minutes": 450,
+    "stages": [
+      { "stage": "AWAKE", "duration_minutes": 30 },
+      { "stage": "LIGHT", "duration_minutes": 250 },
+      { "stage": "DEEP", "duration_minutes": 80 },
+      { "stage": "REM", "duration_minutes": 90 }
     ]
+  },
+  "exercise_data": [
+    {
+      "exercise_type": "RUNNING",
+      "start_time": "2025-07-29T07:45:00Z",
+      "end_time": "2025-07-29T08:15:00Z",
+      "stats": { "calories_burned": 350, "distance_meters": 5000 }
+    }
+  ],
+  "nutrition_data": {
+    "meals": [
+      {
+        "time": "12:30",
+        "description": "Chicken breast salad",
+        "calories": 450
+      },
+      {
+        "time": "19:00",
+        "description": "Spicy ramen and a can of coke",
+        "calories": 700
+      }
+    ],
+    "hydration_liters": 1.5
+  },
+  "vitals_data": {
+    "blood_pressure": [
+      { "time": "2025-07-29T08:30:00Z", "systolic": 135, "diastolic": 88 }
+    ],
+    "blood_glucose": [],
+    "oxygen_saturation": [
+      { "time": "2025-07-30T03:35:00Z", "percentage": 93.0 }
+    ]
+  },
+  "user_preferences": {
+    "likes": ["음악 듣기", "산책"],
+    "dislikes": ["아침 일찍 일어나기"]
   }
 }
