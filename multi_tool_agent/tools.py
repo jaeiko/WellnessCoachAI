@@ -9,6 +9,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from typing import Optional 
 
 # 구글 캘린더 API가 허용할 권한 범위
 SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
@@ -28,77 +29,158 @@ def get_health_data() -> str:
         return json.dumps({"error": "sample_data.json 파일을 찾을 수 없습니다."})
 
 
+# multi_tool_agent/tools.py
+
 def Youtube(query: str) -> str:
     """
-    주어진 검색어로 유튜브에서 관련 영상을 검색합니다.
-    (현재는 검색할 내용을 출력하는 것으로 시뮬레이션합니다.)
+    주어진 검색어로 유튜브에서 관련성 높은 영상 1개를 검색하여 링크를 반환합니다.
     """
     print(f"TOOL CALLED: Youtube(query='{query}')")
-    encoded_query = query.replace(' ', '+')
-    return f"'{query}'에 대한 유튜브 검색 결과 링크: https://www.youtube.com/results?search_query={encoded_query}"
+    api_key = os.getenv("YOUTUBE_API_KEY")
+    if not api_key:
+        return "YouTube API 키가 설정되지 않았습니다."
+
+    try:
+        youtube = build('youtube', 'v3', developerKey=api_key)
+        
+        request = youtube_service.search().list(
+            q=query,
+            part='snippet',
+            type='video',
+            maxResults=1,
+            relevanceLanguage='ko'
+        )
+        response = request.execute()
+        
+        if not response.get('items'):
+            return f"'{query}'에 대한 유튜브 영상을 찾을 수 없습니다."
+            
+        video_id = response['items'][0]['id']['videoId']
+        video_title = response['items'][0]['snippet']['title']
+        
+        return f"'{query}' 관련 영상: '{video_title}'\n링크: https://www.youtube.com/watch?v={video_id}"
+
+    except Exception as e:
+        return f"유튜브 검색 중 오류가 발생했습니다: {e}"
 
 
-def google_calendar_create_event(title: str, start_time: str, end_time: str) -> str:
+def _get_calendar_credentials() -> Credentials | None:
     """
-    주어진 제목과 시간으로 구글 캘린더에 새 이벤트를 생성합니다.
-    start_time, end_time은 'YYYY-MM-DDTHH:MM:SS' 형식의 ISO 8601 문자열이어야 합니다.
-    (예: '2025-08-05T10:00:00')
+    Google Calendar API 인증을 처리하고, 유효한 Credentials 객체를 반환합니다.
     """
-    print(f"TOOL CALLED: google_calendar_create_event(title='{title}')")
     creds = None
-    # token.json 파일은 사용자 인증 정보를 저장합니다.
-    # 파일이 이미 있으면 자동으로 로그인 정보를 불러옵니다.
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
 
-    # 유효한 인증 정보가 없으면 사용자가 로그인하도록 합니다.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                print(f"❌ 토큰 갱신 중 치명적인 오류 발생: {e}")
+                os.remove("token.json")
+                return None
         else:
-            # credentials.json 파일이 필요합니다.
-            flow = InstalledAppFlow.from_client_secrets_file(
-                "credentials.json", SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-        # 다음 실행을 위해 인증 정보를 저장합니다.
+            try:
+                # 💥 모든 종류의 오류를 잡기 위해 try-except 블록 강화
+                if not os.path.exists("credentials.json"):
+                    raise FileNotFoundError("오류: credentials.json 파일을 찾을 수 없습니다. API 설정이 필요합니다.")
+                
+                flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+                creds = flow.run_local_server(port=0)
+            except Exception as e:
+                # FileNotFoundError 외에 JSON 형식 오류, 키 값 오류 등 모든 것을 잡아냅니다.
+                print(f"❌ 인증 흐름 생성 중 치명적인 오류 발생: {e}")
+                return None
+        
         with open("token.json", "w") as token:
             token.write(creds.to_json())
+            
+    return creds
+
+# multi_tool_agent/tools.py
+
+# multi_tool_agent/tools.py
+
+# ... 기존 _get_calendar_credentials() 함수는 그대로 둡니다 ...
+
+def google_calendar_create_single_event(title: str, start_time: str, end_time: str) -> str:
+    """
+    주어진 제목과 시간으로 구글 캘린더에 단일 이벤트를 생성합니다.
+    Args:
+        title (str): 이벤트 제목.
+        start_time (str): 시작 시간 ('YYYY-MM-DDTHH:MM:SS' 형식).
+        end_time (str): 종료 시간 ('YYYY-MM-DDTHH:MM:SS' 형식).
+    """
+    print(f"TOOL CALLED: google_calendar_create_single_event(title='{title}')")
+    creds = _get_calendar_credentials()
+    if not creds: return "Google Calendar 인증에 실패했습니다."
 
     try:
         service = build("calendar", "v3", credentials=creds)
-
-        # API에 전달할 이벤트 객체를 생성합니다.
-        event = {
+        event_body = {
             "summary": title,
             "description": "WellnessCoachAI를 통해 생성된 일정입니다.",
-            "start": {
-                "dateTime": start_time,
-                "timeZone": "Asia/Seoul", # 한국 시간대
-            },
-            "end": {
-                "dateTime": end_time,
-                "timeZone": "Asia/Seoul",
-            },
+            "start": {"dateTime": start_time, "timeZone": "Asia/Seoul"},
+            "end": {"dateTime": end_time, "timeZone": "Asia/Seoul"},
         }
+        created_event = service.events().insert(calendarId="primary", body=event_body).execute()
+        return f"✅ 구글 캘린더에 '{title}' 일정을 성공적으로 등록했습니다. 링크: {created_event.get('htmlLink', '')}"
+    except Exception as e:
+        return f"❌ 단일 일정 생성 중 오류 발생: {e}"
 
-        # API를 호출하여 이벤트를 생성합니다.
-        event = service.events().insert(calendarId="primary", body=event).execute()
+def google_calendar_create_recurring_event(title: str, start_time: str, end_time: str, recurrence_weeks: int) -> str:
+    """
+    주어진 제목과 시간으로 구글 캘린더에 매주 반복되는 이벤트를 생성합니다.
+    Args:
+        title (str): 이벤트 제목.
+        start_time (str): 시작 시간 ('YYYY-MM-DDTHH:MM:SS' 형식).
+        end_time (str): 종료 시간 ('YYYY-MM-DDTHH:MM:SS' 형식).
+        recurrence_weeks (int): 이벤트가 반복될 총 주(week) 수.
+    """
+    print(f"TOOL CALLED: google_calendar_create_recurring_event(title='{title}', weeks={recurrence_weeks})")
+    creds = _get_calendar_credentials()
+    if not creds: return "Google Calendar 인증에 실패했습니다."
 
-        # 성공 메시지를 반환합니다.
-        return f"구글 캘린더에 '{event.get('summary')}' 일정이 성공적으로 등록되었습니다. ({event.get('htmlLink')})"
-
-    except HttpError as error:
-        # API 오류 발생 시 에러 메시지를 반환합니다.
-        return f"일정 생성 중 오류가 발생했습니다: {error}"
+    try:
+        service = build("calendar", "v3", credentials=creds)
+        event_body = {
+            "summary": title,
+            "description": "WellnessCoachAI를 통해 생성된 일정입니다.",
+            "start": {"dateTime": start_time, "timeZone": "Asia/Seoul"},
+            "end": {"dateTime": end_time, "timeZone": "Asia/Seoul"},
+            "recurrence": [f'RRULE:FREQ=WEEKLY;COUNT={recurrence_weeks}']
+        }
+        created_event = service.events().insert(calendarId="primary", body=event_body).execute()
+        return f"✅ 구글 캘린더에 '{title}' 일정을 {recurrence_weeks}주 동안 반복되도록 등록했습니다. 링크: {created_event.get('htmlLink', '')}"
+    except Exception as e:
+        return f"❌ 반복 일정 생성 중 오류 발생: {e}"
 
 def get_weather(location: str) -> str:
     """
     주어진 위치의 현재 날씨 정보를 가져옵니다.
-    (현재는 '맑음'으로 시뮬레이션합니다.)
     """
     print(f"TOOL CALLED: get_weather(location='{location}')")
-    return f"현재 {location}의 날씨는 '맑음'이며, 야외 활동하기 좋은 날씨입니다."
+    api_key = os.getenv("OPENWEATHER_API_KEY")
+    if not api_key:
+        return "OpenWeatherMap API 키가 설정되지 않았습니다."
+
+    # OpenWeatherMap API URL
+    url = f"https://api.openweathermap.org/data/2.5/weather?q={location}&appid={api_key}&lang=kr&units=metric"
+    
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        
+        description = data['weather'][0]['description']
+        temp = data['main']['temp']
+        feels_like = data['main']['feels_like']
+        
+        return f"현재 {location}의 날씨는 '{description}'이며, 온도는 {temp}°C, 체감 온도는 {feels_like}°C 입니다."
+        
+    except Exception as e:
+        return f"{location}의 날씨 정보를 가져오는 데 실패했습니다: {e}"
 
 
 def find_nearby_places(query: str) -> str:

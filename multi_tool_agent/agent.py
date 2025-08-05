@@ -2,7 +2,7 @@
 from google.adk.agents import Agent
 
 # 같은 폴더에 있는 tools.py에서 모든 도구들을 가져옵니다.
-from .tools import get_health_data, Youtube, google_calendar_create_event, get_weather, find_nearby_places
+from .tools import get_health_data, Youtube, google_calendar_create_single_event, google_calendar_create_recurring_event, get_weather, find_nearby_places
 
 # --- 프롬프트 파일 읽기 ---
 try:
@@ -23,8 +23,10 @@ wellness_coach_agent = Agent(
     tools=[
         get_health_data, 
         Youtube, 
-        google_calendar_create_event, 
+        google_calendar_create_single_event, # 🔽 단일 이벤트 도구 추가
+        google_calendar_create_recurring_event,
         get_weather,
         find_nearby_places # find_nearby_places를 여기에 포함
+        
     ],
 )
