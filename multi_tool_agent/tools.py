@@ -8,6 +8,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from firebase_utils import initialize_firebase, get_user_profile
 from googleapiclient.errors import HttpError
 from typing import Optional 
 
@@ -17,16 +18,40 @@ SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 
 def get_health_data() -> str:
     """
-    사용자의 최신 건강 데이터를 가져옵니다.
-    (현재는 로컬 샘플 파일을 읽어오는 것으로 시뮬레이션합니다.)
+    사용자의 건강 데이터를 가져옵니다. 
+    1. Firestore에서 프로필 조회 -> 2. 실패 시 로컬 파일 조회 -> 3. 모두 실패 시 오류 반환
     """
     print("TOOL CALLED: get_health_data()")
-    try:
-        # main.py와 같은 위치에 있는 data 폴더를 참조합니다.
-        with open("data/sample_data.json", "r", encoding="utf-8") as f:
-            return json.dumps(json.load(f))
-    except FileNotFoundError:
-        return json.dumps({"error": "sample_data.json 파일을 찾을 수 없습니다."})
+    
+    # 1. DB에서 프로필을 먼저 시도합니다.
+    db = initialize_firebase()
+    user_profile = get_user_profile(db, "user_1") 
+    
+    # 2. DB에 프로필이 있는 경우 (성공!)
+    if user_profile:
+        print("INFO: Firestore에서 사용자 프로필을 성공적으로 가져왔습니다.")
+        try:
+            # 나머지 데이터는 로컬 파일에서 가져와 결합합니다.
+            with open("data/sample_data.json", "r", encoding="utf-8") as f:
+                health_data = json.load(f)
+                health_data['user_profile'] = user_profile 
+                return json.dumps(health_data, ensure_ascii=False)
+        except FileNotFoundError:
+            # 로컬 파일이 없어도 프로필만으로 응답할 수 있도록 구성
+            return json.dumps({"user_profile": user_profile}, ensure_ascii=False)
+
+    # 3. DB에 프로필이 없는 경우 (대체 방안 시도)
+    else:
+        print("WARNING: Firestore에 프로필이 없어 로컬 sample_data.json을 사용합니다.")
+        try:
+            # 로컬 샘플 데이터 전체를 사용합니다.
+            with open("data/sample_data.json", "r", encoding="utf-8") as f:
+                health_data = json.load(f)
+                return json.dumps(health_data, ensure_ascii=False)
+        except FileNotFoundError:
+            # 4. 로컬 파일도 없는 경우 (최종 실패)
+            print("ERROR: DB와 로컬에서 모두 사용자 데이터를 찾을 수 없습니다.")
+            return json.dumps({"error": "DB와 로컬 파일 모두에 사용자 데이터가 존재하지 않습니다."})
 
 
 # multi_tool_agent/tools.py
@@ -233,3 +258,39 @@ def find_nearby_places(query: str) -> str:
     except Exception as e:
         print(f"--- UNKNOWN ERROR --- \n{e}\n---------------------")
         return f"주변 장소 검색 중 알 수 없는 오류가 발생했습니다: {e}"
+    
+def get_past_analysis_logs(user_id: str, days: int) -> str:
+    """
+    지정된 기간 동안의 과거 건강 분석 기록을 Firestore에서 가져옵니다.
+    
+    Args:
+        user_id (str): 조회할 사용자의 ID.
+        days (int): 오늘로부터 며칠 전까지의 기록을 조회할지 지정 (예: 7).
+    """
+    print(f"TOOL CALLED: get_past_analysis_logs(user_id='{user_id}', days={days})")
+    try:
+        db = initialize_firebase()
+        
+        # 'analysis_history' 컬렉션에서 문서를 시간순으로 정렬하여 가져옴
+        logs_ref = db.collection('users').document(user_id).collection('analysis_history').order_by(
+            'timestamp', direction=firestore.Query.DESCENDING
+        ).limit(days) # 간단하게 최근 days개의 문서를 가져옴 (정확한 날짜 필터링은 로직 추가 필요)
+        
+        docs = logs_ref.stream()
+        
+        past_logs = []
+        for doc in docs:
+            log_data = doc.to_dict()
+            # Firestore의 Timestamp 객체를 문자열로 변환
+            if 'timestamp' in log_data and hasattr(log_data['timestamp'], 'isoformat'):
+                log_data['timestamp'] = log_data['timestamp'].isoformat()
+            past_logs.append(log_data)
+
+        if not past_logs:
+            return "저장된 과거 분석 기록이 없습니다."
+            
+        # Agent가 처리하기 쉽도록 JSON 문자열로 변환하여 반환
+        return json.dumps(past_logs, ensure_ascii=False)
+
+    except Exception as e:
+        return f"과거 기록 조회 중 오류가 발생했습니다: {e}"

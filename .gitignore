@@ -61,6 +61,9 @@ cover/
 # token
 token.json
 
+# firebase_credentials.json
+firebase_credentials.json
+
 # Translations
 *.mo
 *.pot

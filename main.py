@@ -9,6 +9,8 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 import sys
 import io
+from firebase_utils import initialize_firebase, save_analysis_json
+import json
 
 # Windows 터미널에서 한글이 깨지지 않도록 설정
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -30,6 +32,7 @@ class ConversationManager:
             "user_id": "user_1",
             "session_id": "session_1"
         }
+        self.db = initialize_firebase()
 
     async def initialize(self):
         """세션과 러너를 비동기적으로 초기화합니다."""
@@ -69,15 +72,40 @@ class ConversationManager:
         print(f"\n> 당신: {query}")
         content = types.Content(role='user', parts=[types.Part(text=query)])
 
-        final_response = None
+        final_response_text = None
         async for event in self.runner.run_async(user_id=self.session_info["user_id"], session_id=self.session_info["session_id"], new_message=content):
             if event.is_final_response():
-                final_response = event.content
+                final_response_text = event.content.parts[0].text
                 break
 
-        if final_response:
-            formatted_text = self.format_response(final_response)
-            print(f"\nAI 비서: {formatted_text}")
+        if final_response_text:
+            try:
+                # 🔽 [핵심 수정] AI의 응답에서 Markdown 코드 블록을 제거합니다.
+                clean_text = final_response_text.strip()
+                if clean_text.startswith("```json"):
+                    clean_text = clean_text[7:].strip() # "```json" 과 줄바꿈 제거
+                if clean_text.endswith("```"):
+                    clean_text = clean_text[:-3].strip()
+                
+                response_data = json.loads(clean_text)
+                analysis_json = response_data.get("analysis_json", {})
+                response_for_user = response_data.get("response_for_user", "오류: 응답을 해석할 수 없습니다.")
+
+                print(f"\nAI 비서: {response_for_user}")
+                
+                # Firestore 저장 로직은 그대로 유지
+                if analysis_json: # analysis_json이 비어있지 않을 때만 저장
+                    save_analysis_json(
+                        db=self.db,
+                        user_id=self.session_info["user_id"],
+                        session_id=self.session_info["session_id"],
+                        analysis_data=analysis_json 
+                    )
+
+            except json.JSONDecodeError:
+                # 파싱 실패 시, 원본 텍스트라도 보여줌
+                print(f"\nAI 비서: {final_response_text}")
+                print("(경고: AI 응답을 JSON 형식으로 파싱하는 데 실패했습니다.)")
         else:
             print("\nAI 비서: 죄송합니다, 답변을 생성하는 데 실패했습니다.")
 
