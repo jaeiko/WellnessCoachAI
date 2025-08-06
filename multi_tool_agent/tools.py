@@ -100,10 +100,6 @@ def _get_calendar_credentials() -> Credentials | None:
 
 # multi_tool_agent/tools.py
 
-# multi_tool_agent/tools.py
-
-# ... 기존 _get_calendar_credentials() 함수는 그대로 둡니다 ...
-
 def google_calendar_create_single_event(title: str, start_time: str, end_time: str) -> str:
     """
     주어진 제목과 시간으로 구글 캘린더에 단일 이벤트를 생성합니다.
