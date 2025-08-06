@@ -9,18 +9,21 @@ from .tools import get_health_data, Youtube, google_calendar_create_single_event
 # --- Prompt ---
 try:
     with open("prompts/analytics_prompt.txt", "r", encoding="utf-8") as f:
-        # analytics_prompt는 이제 get_health_data 도구에 대한 상세 지침이 됩니다.
         HEALTHCARE_ANALYTICS_INSTRUCTIONS = f.read()
 except FileNotFoundError:
     HEALTHCARE_ANALYTICS_INSTRUCTIONS = "Analyze health data."
     
-# --- 프롬프트 파일 읽기 ---
 try:
     with open("prompts/suggestion_prompt.txt", "r", encoding="utf-8") as f:
-        # analytics_prompt는 이제 get_health_data 도구에 대한 상세 지침이 됩니다.
         HEALTHCARE_SUGGESTION_INSTRUCTIONS = f.read()
 except FileNotFoundError:
     HEALTHCARE_SUGGESTION_INSTRUCTIONS = "Suggest wellness routines based on health data."
+    
+try:
+    with open("prompts/long_term_analytics_prompt.txt", "r", encoding="utf-8") as f:
+        LONG_TERM_ANALYTICS_INSTRUCTIONS = f.read()
+except FileNotFoundError:
+    LONG_TERM_ANALYTICS_INSTRUCTIONS = "Suggest long-term wellness routines based on health data."
     
     
 combined_instructions = f"""
@@ -29,6 +32,9 @@ combined_instructions = f"""
 
 --- SUGGESTION INSTRUCTIONS ---
 {HEALTHCARE_SUGGESTION_INSTRUCTIONS}
+
+--- LONG TERM ANALYTICS INSTRUCTIONS ---
+{LONG_TERM_ANALYTICS_INSTRUCTIONS}
 """
 
 # --- '만능' 웰니스 코치 에이전트 ---
