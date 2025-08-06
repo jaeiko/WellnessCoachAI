@@ -58,6 +58,9 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# token
+token.json
+
 # Translations
 *.mo
 *.pot

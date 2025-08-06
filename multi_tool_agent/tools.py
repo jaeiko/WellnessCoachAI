@@ -41,13 +41,13 @@ def Youtube(query: str) -> str:
         return "YouTube API 키가 설정되지 않았습니다."
 
     try:
-        youtube = build('youtube', 'v3', developerKey=api_key)
+        youtube_service = build('youtube', 'v3', developerKey=api_key)
         
         request = youtube_service.search().list(
             q=query,
             part='snippet',
             type='video',
-            maxResults=1,
+            maxResults=5,
             relevanceLanguage='ko'
         )
         response = request.execute()
@@ -55,8 +55,12 @@ def Youtube(query: str) -> str:
         if not response.get('items'):
             return f"'{query}'에 대한 유튜브 영상을 찾을 수 없습니다."
             
-        video_id = response['items'][0]['id']['videoId']
-        video_title = response['items'][0]['snippet']['title']
+        results = []
+        for item in response['items']:
+            video_id = item['id']['videoId']
+            video_title = item['snippet']['title']
+            link = f"https://www.youtube.com/watch?v={video_id}"
+            results.append(f"- {video_title}\n  (링크: {link})")
         
         return f"'{query}' 관련 영상: '{video_title}'\n링크: https://www.youtube.com/watch?v={video_id}"
 
