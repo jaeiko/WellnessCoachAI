@@ -106,20 +106,26 @@ def Youtube(query: str) -> str:
 
 def convert_natural_time_to_iso(time_expression: str) -> str:
     """
-    "내일 아침", "모레 저녁 7시 15분"과 같은 자연어 시간 표현을
+    "오늘 저녁 7시 30분", "모레 20:15"과 같은 자연어 시간 표현을
     'YYYY-MM-DDTHH:MM:SS' 형식의 ISO 문자열로 변환합니다.
     """
     print(f"TOOL CALLED: convert_natural_time_to_iso(expression='{time_expression}')")
     try:
-        # dateparser를 사용하여 자연어 시간 파싱
-        parsed_time = dateparser.parse(time_expression, settings={'PREFER_DATES_FROM': 'future', 'TIMEZONE': 'Asia/Seoul'})
+        # 🔽 [핵심 수정 1] "오늘"의 기준이 될 현재 시간을 가져옵니다.
+        now = datetime.datetime.now()
+
+        # 🔽 [핵심 수정 2] settings에 'RELATIVE_BASE'를 추가하여 기준점을 명시합니다.
+        parsed_time = dateparser.parse(
+            time_expression,
+            languages=['ko'],
+            settings={'PREFER_DATES_FROM': 'future', 'TIMEZONE': 'Asia/Seoul', 'RELATIVE_BASE': now}
+        )
         if parsed_time:
             return parsed_time.strftime('%Y-%m-%dT%H:%M:%S')
         else:
-            return "오류: 시간 표현을 해석할 수 없습니다."
+            return f"오류: '{time_expression}'을(를) 시간으로 해석할 수 없습니다."
     except Exception as e:
         return f"시간 변환 중 오류 발생: {e}"
-
 
 def _get_calendar_credentials() -> Credentials | None:
     """
