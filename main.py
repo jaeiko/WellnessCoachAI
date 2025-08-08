@@ -1,6 +1,7 @@
-# main.py
-from multi_tool_agent.agent import wellness_coach_agent
 from dotenv import load_dotenv
+load_dotenv(dotenv_path="multi_tool_agent/.env")
+
+from multi_tool_agent.agent import wellness_coach_agent
 import google.generativeai as genai
 import os
 import asyncio
@@ -18,7 +19,6 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 # multi_tool_agent 폴더의 agent.py에서 '만능 에이전트'를 가져옵니다.
 
 # .env 파일 로드 및 API 키 설정
-load_dotenv(dotenv_path="multi_tool_agent/.env")
 genai.configure(api_key=os.getenv("GOOGLE_AI_API_KEY"))
 
 

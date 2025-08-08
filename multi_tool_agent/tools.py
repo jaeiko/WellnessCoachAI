@@ -10,10 +10,22 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from firebase_utils import initialize_firebase, get_user_profile
 from googleapiclient.errors import HttpError
-from typing import Optional 
+from typing import Optional
+from google.generativeai.caching import CachedContent
+import google.generativeai as genai
+from firebase_admin import firestore
+import dateparser
 
 # 구글 캘린더 API가 허용할 권한 범위
 SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+
+# 🔽 [핵심 추가 1] 캐시 객체를 파일 상단에서 미리 로드합니다.
+CACHE_NAME = os.getenv("GEMINI_CACHE_NAME")
+if not CACHE_NAME:
+    raise ValueError("GEMINI_CACHE_NAME이 .env 파일에 설정되지 않았습니다.")
+print(f"'{CACHE_NAME}' 캐시를 로드합니다...")
+KNOWLEDGE_CACHE = CachedContent.get(name=CACHE_NAME)
+print("✅ 캐시 로드 완료!")
 
 
 def get_health_data() -> str:
@@ -91,6 +103,22 @@ def Youtube(query: str) -> str:
 
     except Exception as e:
         return f"유튜브 검색 중 오류가 발생했습니다: {e}"
+
+def convert_natural_time_to_iso(time_expression: str) -> str:
+    """
+    "내일 아침", "모레 저녁 7시 15분"과 같은 자연어 시간 표현을
+    'YYYY-MM-DDTHH:MM:SS' 형식의 ISO 문자열로 변환합니다.
+    """
+    print(f"TOOL CALLED: convert_natural_time_to_iso(expression='{time_expression}')")
+    try:
+        # dateparser를 사용하여 자연어 시간 파싱
+        parsed_time = dateparser.parse(time_expression, settings={'PREFER_DATES_FROM': 'future', 'TIMEZONE': 'Asia/Seoul'})
+        if parsed_time:
+            return parsed_time.strftime('%Y-%m-%dT%H:%M:%S')
+        else:
+            return "오류: 시간 표현을 해석할 수 없습니다."
+    except Exception as e:
+        return f"시간 변환 중 오류 발생: {e}"
 
 
 def _get_calendar_credentials() -> Credentials | None:
@@ -294,3 +322,24 @@ def get_past_analysis_logs(user_id: str, days: int) -> str:
 
     except Exception as e:
         return f"과거 기록 조회 중 오류가 발생했습니다: {e}"
+    
+    
+# 캐시를 사용하는 새로운 도구 함수를 정의
+def ask_knowledge_base(question: str) -> str:
+    """
+    PDF 문서들이 캐싱된 지식 베이스에 특정 질문을 하여 답변을 얻습니다.
+    분석 중 과학적 근거를 찾을 때 사용합니다.
+    Args:
+        question (str): 지식 베이스에 물어볼 구체적인 질문.
+    """
+    print(f"TOOL CALLED: ask_knowledge_base(question='{question}')")
+    try:
+        # 캐시를 사용하여 모델을 초기화합니다.
+        model = genai.GenerativeModel.from_cached_content(cached_content=KNOWLEDGE_CACHE)
+        
+        # 캐싱된 문서 내용을 바탕으로 질문에 대한 답변을 생성합니다.
+        response = model.generate_content(question)
+        
+        return response.text
+    except Exception as e:
+        return f"지식 베이스 조회 중 오류가 발생했습니다: {e}"
