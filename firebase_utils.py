@@ -4,6 +4,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
 
+
 def initialize_firebase():
     """
     Firebase 앱을 초기화하고 Firestore 클라이언트를 반환합니다.
@@ -16,8 +17,9 @@ def initialize_firebase():
         # 초기화되지 않았다면, 서비스 계정 키를 사용하여 초기화
         cred = credentials.Certificate("firebase_credentials.json")
         firebase_admin.initialize_app(cred)
-    
+
     return firestore.client()
+
 
 def save_analysis_json(db, user_id: str, session_id: str, analysis_data: dict):
     """
@@ -25,11 +27,13 @@ def save_analysis_json(db, user_id: str, session_id: str, analysis_data: dict):
     """
     # 문서 ID를 타임스탬프로 하여 시간순 정렬이 용이하게 함
     doc_id = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-    doc_ref = db.collection('users').document(user_id).collection('analysis_history').document(doc_id)
-    
+    doc_ref = db.collection('users').document(
+        user_id).collection('analysis_history').document(doc_id)
+
     analysis_data['timestamp'] = firestore.SERVER_TIMESTAMP
     doc_ref.set(analysis_data)
     print(f"✅ Firestore에 분석 결과 저장 완료: {user_id}/{doc_id}")
+
 
 def get_user_profile(db, user_id: str) -> dict | None:
     """
